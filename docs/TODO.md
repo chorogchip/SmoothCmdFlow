@@ -28,18 +28,21 @@ SmoothCmdFlow now has a C++17 build, a runtime `SmoothCmdFlowSetup`, a stack-bas
   - Nested global arguments.
   - Type mismatch rejection.
   - Unknown method rejection.
+- [x] Improve `SmoothCmdFlowDevice` error messages.
+  - Errors are single-line strings.
+  - Type mismatch includes expected and actual type names.
+  - Tests assert representative error content.
+- [x] Implement prefix-based `get_command_candidate()`.
+  - Candidates are filtered by the current identifier prefix.
+- [x] Rework `apply_autocomplete()`.
+  - Replaces only the current identifier prefix.
+  - Preserves the rest of the command line.
 
 ## Next
 
-- [ ] Improve `SmoothCmdFlowDevice` error messages.
-  - Include function names, expected/actual type IDs, and token text where useful.
-  - Add tests that assert specific error categories.
 - [ ] Implement context-aware `get_command_candidate()`.
-  - Current version returns all function names.
-  - It should parse the current partial input and return only valid global/method/argument candidates.
-- [ ] Rework `apply_autocomplete()`.
-  - Current behavior replaces the whole input with the only candidate.
-  - It should complete the current token/prefix and preserve the rest of the command line.
+  - Current version filters by prefix but not by parse context.
+  - It should return only valid global/method/argument candidates for the current cursor state.
 - [ ] Decide memory ownership for callback results.
   - Current callback contract returns raw `void*`.
   - Document whether callbacks return borrowed pointers, owned pointers, arena-backed pointers, or domain-managed objects.
@@ -48,6 +51,9 @@ SmoothCmdFlow now has a C++17 build, a runtime `SmoothCmdFlowSetup`, a stack-bas
   - Add quoted string tokens and map them to setup type `String`.
 - [ ] Add tests for arrays and method dispatch on `Array<T>`.
   - Confirm whether array receivers call element methods and return `Array<Out>` or another agreed type behavior.
+- [ ] Replace header-only tests with a real test translation unit.
+  - Move test code out of `src/testexamples.h`.
+  - Keep example setup separate from assertions.
 - [ ] Update `docs/language_spec.md`.
   - Fix typos such as `expernal` and `argumet`.
   - Document the runtime callback model.
@@ -56,4 +62,3 @@ SmoothCmdFlow now has a C++17 build, a runtime `SmoothCmdFlowSetup`, a stack-bas
 - [ ] Update `README.md`.
   - Add build/run/test commands.
   - Replace stale examples with commands supported by `testexamples.h`.
-

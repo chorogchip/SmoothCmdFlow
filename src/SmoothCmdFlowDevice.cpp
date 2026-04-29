@@ -252,10 +252,10 @@ private:
         }
 
         if (selected == nullptr && expected != nullptr && wrong_type != nullptr) {
-            error_ = "function '" + std::string(name) + "' returns " + type_name(wrong_type->out) +
-                     ", expected " + type_name(*expected) + " for argument " +
-                     std::to_string(stack_.back().input_data.size() + 1) +
-                     " of function '" + stack_.back().func->name + "'";
+            error_ = "argument " + std::to_string(stack_.back().input_data.size() + 1) +
+                     " for function '" + stack_.back().func->name + "' expected " +
+                     type_name(*expected) + ", got " + type_name(wrong_type->out) +
+                     " from function '" + std::string(name) + "'";
         }
 
         return selected;
