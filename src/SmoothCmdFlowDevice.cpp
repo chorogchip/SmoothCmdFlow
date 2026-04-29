@@ -221,6 +221,7 @@ private:
     const SmoothCmdFlowSetup::FuncDecl* resolve_starter(std::string_view name) {
         const SmoothCmdFlowSetup::TypeRef* expected = expected_input_type();
         const SmoothCmdFlowSetup::FuncDecl* selected = nullptr;
+        const SmoothCmdFlowSetup::FuncDecl* wrong_type = nullptr;
 
         for (const SmoothCmdFlowSetup::FuncDecl& func : funcs_) {
             if (func.name != name) {
@@ -236,6 +237,9 @@ private:
                     continue;
                 }
                 if (expected != nullptr && !same_type(func.out, *expected)) {
+                    if (wrong_type == nullptr) {
+                        wrong_type = &func;
+                    }
                     continue;
                 }
             }
@@ -245,6 +249,13 @@ private:
                 return nullptr;
             }
             selected = &func;
+        }
+
+        if (selected == nullptr && expected != nullptr && wrong_type != nullptr) {
+            error_ = "function '" + std::string(name) + "' returns " + type_name(wrong_type->out) +
+                     ", expected " + type_name(*expected) + " for argument " +
+                     std::to_string(stack_.back().input_data.size() + 1) +
+                     " of function '" + stack_.back().func->name + "'";
         }
 
         return selected;
