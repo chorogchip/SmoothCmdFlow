@@ -1,0 +1,276 @@
+
+
+
+
+아 어차피 | 뒤엔 무조건 . 이오니까 그냥 삭제해도 되겠네
+
+entity.filter.stepblock.is stone | summon lightning
+entity.filter.stepblock.is stone | damage 10 | emit spark
+entity.filter.type.is creeper | filter.distance.lt 5 | kill
+
+entity.filter.stepblock.is(stone).summon lightning
+entity.filter.stepblock.is(stone).damage(10).emit(spark)
+entity.filter.type.is(creeper).filter.distance.lt(5).kill
+
+entity.filter.stepblock.is stone > summon lightning
+entity.filter.stepblock.is stone > damage 10 > emit spark
+entity.filter.type.is creeper > filter.distance.lt 5 > kill
+
+entity.filter.stepblock.is stone : summon lightning
+entity.filter.stepblock.is stone : damage 10 : emit spark
+entity.filter.type.is creeper : filter.distance.lt 5 : kill
+
+player.nearest.summon pig
+entity.filter.type.is zombie | filter.health.it 10 | effect ignite
+-> enum에 올수있는건 effects.ignite대신 effect의 인자가 effects이니까 생략하고 바로 쓸수있게 해야지
+
+player.filter.inentory.empty.give apple
+
+world.filter.time.is night | origin.summon skeleton
+
+여기까지보면 | 이 필요하나 싶은데 이제
+
+player.filter.inentory.has sword.filter.durability.lt 10 | inventory.give sword
+
+
+
+
+질문: programming language를 설계하는데
+nonterminal은 var, function, ., | 4개이고
+이런 형태야
+
+entity.filter.stepblock.is stone | summon lightning
+entity.filter.stepblock.is stone | damage 10 | emit spark
+entity.filter.type.is creeper | filter.distance.lt 5 | kill
+player.filter.inentory.has sword.filter.durability.lt 10 | inventory.give sword
+
+player, entiry는 var,
+filter, inventory, has, .. 은 function이고
+function은 인자수가 함수마다 고정되어있고 무조건 var을 리턴해 (명확한 신택스보다 대충설명할게)
+
+.은 var에대해 함수를 적용하는거고
+| 이 중요한데 이건 .사이를 끊어줘
+즉
+player.filter.inentory.has sword.filter.durability.small | inventory.give sword 에서
+|이 없다면
+
+player.filter.inentory.has sword.filter.durability.small.inventory.give sword
+여기서 .inventory가 .small에 적용되는지 .has에 적용되는지 모르기때문에 | 으로 끊어준거야
+이러면 this를 제외한 인자가 0개나 1개인 함수에 대해선 잘 동작하지
+
+player.filter.inentory.has sword.filter.durability.lt 10 | inventory.give sword ||
+인자가 있는 함수의 개수만큼 써야해 즉 함수를 닫는 괄호라고 생각하면 됨 단 마지막 |는 생략가능
+함수의 닫는 괄호만 쓰는거지
+
+근데 인자가 2개인 함수에 대해서 잘 동작하는지 모르겠어
+만약 amboguous한 상황이 있다면 식을 예시로 들어주고
+없다면 없다 말해줘
+
+x.f1 a.f2 aa |.f3 b
+
+
+pipeline   := stage ('|' stage)*
+stage      := expr
+expr       := primary ('.' call)*
+primary    := var
+call       := fn0
+           | fn1 expr
+           | fn2 expr expr
+           | fn3 expr expr expr
+           | ...
+
+fN의 인자가 모두 this, a 이렇게 2개라고 할때
+a1.f1 a2.f2 a3 || .f4 a4
+이걸 표현못하잖아
+a1.f1 a2.f2 a3 | .f4 a4
+와는 의미도 달라야하고
+
+-> 없는 것으로 판별됨.
+
+
+
+<S> := <val>
+<val> := <val_noremd> | <val_pipend>
+<val_noremd> := <basic> | <val_normend>.<func> | <val_pipend> <func>
+<val_pipend> := <val_normend>.<func> '|' | <val_pipend> <func> '|'
+<func> := <fid> { <val> }
+
+<basic> := name
+<fid> := name
+
+
+
+
+<S> := <term>
+<term> := <func> { .<func> }
+<func> := <id> '(' { <term> } ')'
+
+
+<S> := <term>
+<term> := <func> { .<func> }
+<func> := <id> { <term> } '|'
+
+
+<S> := <term>
+<term> := <func> { .<func> }
+<func> := <id> ( { <term> } '|' )
+
+
+<S> := <val>
+<val> := <val_open> | <val_close>
+<val_open> := <id> | <val_open>.<id> | <val_close> <id>
+<val_close> := <val_open> { <val> } '|'
+
+# 완성안
+<S> := <val> | <val_end>
+<val> := <val_open> | <val_close>
+<val_open> := <id> | <val_open>.<id> | <val_close> <id>
+<val_close> := <val_open> { <val> } '|'
+<val_end> := <val_open> { <val> } (<id> | <val_end>)
+-> id id id에서 탈락
+
+<S> := <val> | <val_end>
+<val> := <val_open> <val'>
+<val'> := eps | { <val> } '|'
+<val_open> := <id> | <val_open'>
+<val_open'> := eps | .<id> <val_open'> | { <val> } '|' <id> <val_open'>
+<val_end> := <val_open> { <val> } (<id> | <val_end>)
+
+
+
+<S> := <val> | <val_end>
+<val> := <val_open> ( { <val> } '|' )
+<val_open> := <id> | <val_open>.<id> | <val_open> { <val> } '|' <id>
+<val_end> := <val_open> { <val> } (<id> | <val_end>)
+
+
+
+# 오 이거 ㄱㅊ? -> ㄴ
+<S> := <val>
+<val> := <valc>
+<valc> := <funcc> | <valo>.<funcc> | <valc> <funcc>
+<valo> := <funco> | <valo>.<funco> | <valc> <funco>
+
+<funco> := <func0o> | <func1o> | <func2o>
+<funcc> := <func0c> | <func1c> | <func2c>
+<func0o> := <id0>
+<func0c> := <id0> '|'
+<func1o> := <id1> <val>
+<func1c> := <id1> <val> '|'
+<func2o> := <id2> <val> <val>
+<func2c> := <id2> <val> <val> '|'
+
+
+
+<S> := <val>
+<val> := <valo> | <valc>
+<valc> := <funcc> | <valo>.<funcc> | <valc> <funcc>
+<valo> := <func0> | <valo>.<func0> | <valc> <func0>
+
+<funcc> := <func1> | <func2>
+<func0> := <id0>
+<func1> := <id1> <val> '|'
+<func2> := <id2> <val> <val> '|'
+
+이건 -> 안됨
+id2 id1 id0 | id1 id0 | id0 |
+id2   [id1 id0 |]   [id1 id0 | id0]   |
+id2   [id1 id0 | id1 id0 |]   [id0]   |
+
+
+<S> := <val>
+<val> := <funcc> | <val>.<funcc>
+
+<funcc> := <func0> | <func1> | <func2>
+<func0> := <id0> '|'
+<func1> := <id1> <val> '|'
+<func2> := <id2> <val> <val> '|'
+
+안됨: id2 id0| id0| id0| |
+
+
+# 2인자짜리를 제거함
+# 오 됨!!!
+<S> := <val>
+<val> := <valo> | <valc>
+<valo> := <func0> | <valo>.<func0> | <valc> <func0>
+<valc> := <func1> | <valo>.<func1> | <valc> <func1>
+
+<func0> := <id0>
+<func1> := <id1> <val> '|'
+
+<id0> := entity | filter | stepblock | distance | creeper | type | stone | lightning | 10 | kill | origin | player
+<id1> := is | summon | emit | damage | lt
+
+
+# 수정
+<S> := <val> | <vale>
+<val> := <valo> | <valc>
+<valo> := <func0> | <valo>.<func0> | <valc> <func0>
+<valc> := <func1> | <valo>.<func1> | <valc> <func1>
+<vale> := <funce> | <valo>.<funce> | <valc> <funce>
+
+<func0> := <id0>
+<func1> := <id1> <val> '|'
+<funce> := <id1> <val> | <id1> <vale>
+
+<id0> := entity | filter | stepblock | distance | creeper | type | stone | lightning | 10 | kill | origin | player
+<id1> := is | summon | emit | damage | lt
+
+이건 ambigous해? -> 안함!
+
+
+# 개량 (LR)
+<S>        ::= <Closed>
+             | <id1> <S>
+
+<Closed>   ::= <id0> <ObjTail>
+             | <id1> <Closed> '|' <CallTail>
+
+<ObjTail>  ::= '.' <id0> <ObjTail>
+             | '.' <id1> <Closed> '|' <CallTail>
+             | '.' <id1> <S>
+             | ε
+
+<CallTail> ::= <id0> <ObjTail>
+             | <id1> <Closed> '|' <CallTail>
+             | <id1> <S>
+             | ε
+
+야 이거 그냥 파서에 넣기 전에 왼쪽부터 오른쪽으로 스윕하면서 (혹은 렉서에서)
+<id0> . -> <id0> '|' 로 교체하고
+<id1> 개수 - '|'개수 세서 뒤에 '|' 추가하면
+<S> := { <func> }+
+<func> := <id0> '|' | <id1> <S> '|'
+문법으로 쉽게 RD파싱할수 있는거 아냐?
+
+# 혹은
+<seq>  := <func> <seq_tail>
+<seq_tail> := <func> <seq_tail> | ε
+
+<func> := <id0> '|'
+        | <id1> <seq> '|'
+
+
+정확히는,
+1. 모든 <id0> 뒤에 '|' 룰 붙인다.
+2. '.'는 버린다.
+3. 닫히지 않은 <id1> 개수만큼 '|'를 더 붙인다.
+
+
+
+그리고 또 특징인 점이, 여기서 unary와 binary가 있으므로 결국 operator가 parent인 binary tree 를 inorder로 traversal하는건데,
+스트림적인 구조 특성상 |가 재까지 만든 컨텍스트 전체를 unwind하며 부모로 넘겨주는 느낌이야. 그래서 잘 어울려
+left.op(right).parent 보다는
+left.op right |(unwind) parent 가 읽히잖아?
+
+is(stone).damage(10).emit(spark) 는 각 단계가 호출 덩어리처럼 보인다.
+반면 is stone | damage 10 | emit spark 는 각 단계가 동일한 수준의 연산 리듬으로 이어진다. 이건 chain language로서 큰 장점이다.
+
+
+
+
+
+
+
+
