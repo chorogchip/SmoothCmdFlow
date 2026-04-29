@@ -37,12 +37,13 @@ SmoothCmdFlow now has a C++17 build, a runtime `SmoothCmdFlowSetup`, a stack-bas
 - [x] Rework `apply_autocomplete()`.
   - Replaces only the current identifier prefix.
   - Preserves the rest of the command line.
+- [x] Implement context-aware `get_command_candidate()`.
+  - Sentence start offers only global functions.
+  - Receiver method position offers only methods for that receiver type.
+  - Argument start offers only argument functions that match the expected type.
 
 ## Next
 
-- [ ] Implement context-aware `get_command_candidate()`.
-  - Current version filters by prefix but not by parse context.
-  - It should return only valid global/method/argument candidates for the current cursor state.
 - [ ] Decide memory ownership for callback results.
   - Current callback contract returns raw `void*`.
   - Document whether callbacks return borrowed pointers, owned pointers, arena-backed pointers, or domain-managed objects.

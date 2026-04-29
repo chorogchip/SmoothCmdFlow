@@ -23,6 +23,20 @@ struct Frame {
     std::vector<void*> input_data;
 };
 
+struct TypeFrame {
+    const SmoothCmdFlowSetup::FuncDecl* func = nullptr;
+    SmoothCmdFlowSetup::TypeRef result_type;
+    std::size_t input_count = 0;
+};
+
+struct CandidateContext {
+    SmoothCmdFlowSetup::TypeRef current;
+    bool has_current = false;
+    bool after_dot = false;
+    const SmoothCmdFlowSetup::TypeRef* expected = nullptr;
+    bool valid = true;
+};
+
 static bool same_type(SmoothCmdFlowSetup::TypeRef lhs, SmoothCmdFlowSetup::TypeRef rhs) {
     return lhs.id == rhs.id && lhs.is_array == rhs.is_array;
 }
@@ -50,6 +64,16 @@ static bool starts_with(std::string_view value, std::string_view prefix) {
 
 static bool has_type(SmoothCmdFlowSetup::TypeRef type) {
     return type.id != SmoothCmdFlowSetup::no_type;
+}
+
+static void push_unique(std::vector<std::string>& out, const std::string& value) {
+    for (const std::string& existing : out) {
+        if (existing == value) {
+            return;
+        }
+    }
+
+    out.push_back(value);
 }
 
 class Executor {
@@ -220,7 +244,8 @@ private:
 
     const SmoothCmdFlowSetup::FuncDecl* resolve_starter(std::string_view name) {
         const SmoothCmdFlowSetup::TypeRef* expected = expected_input_type();
-        const SmoothCmdFlowSetup::FuncDecl* selected = nullptr;
+        const SmoothCmdFlowSetup::FuncDecl* exact = nullptr;
+        const SmoothCmdFlowSetup::FuncDecl* fallback = nullptr;
         const SmoothCmdFlowSetup::FuncDecl* wrong_type = nullptr;
 
         for (const SmoothCmdFlowSetup::FuncDecl& func : funcs_) {
@@ -240,25 +265,37 @@ private:
                     if (wrong_type == nullptr) {
                         wrong_type = &func;
                     }
+                    if (fallback != nullptr) {
+                        error_ = "ambiguous function '" + std::string(name) + "'";
+                        return nullptr;
+                    }
+                    fallback = &func;
                     continue;
                 }
             }
 
-            if (selected != nullptr) {
+            if (exact != nullptr) {
                 error_ = "ambiguous function '" + std::string(name) + "'";
                 return nullptr;
             }
-            selected = &func;
+            exact = &func;
         }
 
-        if (selected == nullptr && expected != nullptr && wrong_type != nullptr) {
+        if (exact != nullptr) {
+            return exact;
+        }
+        if (fallback != nullptr) {
+            return fallback;
+        }
+
+        if (expected != nullptr && wrong_type != nullptr) {
             error_ = "argument " + std::to_string(stack_.back().input_data.size() + 1) +
                      " for function '" + stack_.back().func->name + "' expected " +
                      type_name(*expected) + ", got " + type_name(wrong_type->out) +
                      " from function '" + std::string(name) + "'";
         }
 
-        return selected;
+        return nullptr;
     }
 
     const SmoothCmdFlowSetup::FuncDecl* resolve_method(std::string_view name) {
@@ -417,6 +454,251 @@ private:
     }
 };
 
+class CandidateAnalyzer {
+private:
+    const SmoothCmdFlowSetup& setup_;
+    const std::vector<SmoothCmdFlowSetup::FuncDecl>& funcs_;
+    std::string source_;
+    StringPool token_table_;
+    std::vector<TypeFrame> stack_;
+    SmoothCmdFlowSetup::TypeRef current_;
+    bool has_current_ = false;
+    bool after_dot_ = false;
+    SmoothCmdFlowSetup::TypeId i64_type_ = SmoothCmdFlowSetup::no_type;
+
+public:
+    CandidateAnalyzer(
+        const SmoothCmdFlowSetup& setup,
+        const std::vector<SmoothCmdFlowSetup::FuncDecl>& funcs,
+        std::string source
+    ) : setup_(setup), funcs_(funcs), source_(std::move(source)) {}
+
+    CandidateContext run() {
+        auto i64 = setup_.find_type("I64");
+        if (i64.has_value()) {
+            i64_type_ = *i64;
+        }
+
+        std::vector<Lexeme> tokens = Lexer::lex(source_, token_table_);
+        for (const Lexeme& lexeme : tokens) {
+            if (lexeme.tok == Token::EndOfFile) {
+                break;
+            }
+            if (!consume(lexeme)) {
+                return CandidateContext{{}, false, false, nullptr, false};
+            }
+        }
+
+        CandidateContext context;
+        context.current = current_;
+        context.has_current = has_current_;
+        context.after_dot = after_dot_;
+        context.expected = expected_input_type();
+        return context;
+    }
+
+private:
+    bool consume(const Lexeme& lexeme) {
+        switch (lexeme.tok) {
+            case Token::Identifier:
+                return consume_identifier(lexeme.id);
+            case Token::Number:
+                return consume_number();
+            case Token::Dot:
+                return consume_dot();
+            case Token::Bar:
+                return consume_bar();
+            case Token::Invalid:
+                return false;
+            case Token::EndOfFile:
+                return true;
+        }
+
+        return false;
+    }
+
+    bool consume_identifier(std::uint64_t token_id) {
+        auto name = token_table_.get(token_id);
+        if (!name.has_value()) {
+            return false;
+        }
+
+        const SmoothCmdFlowSetup::FuncDecl* func = resolve_func(*name);
+        if (func == nullptr) {
+            return false;
+        }
+
+        return start_func(*func);
+    }
+
+    bool consume_number() {
+        if (after_dot_ || stack_.empty() || has_current_ || i64_type_ == SmoothCmdFlowSetup::no_type) {
+            return false;
+        }
+
+        current_ = SmoothCmdFlowSetup::type(i64_type_);
+        has_current_ = true;
+        return true;
+    }
+
+    bool consume_dot() {
+        if (!has_current_ || after_dot_) {
+            return false;
+        }
+
+        after_dot_ = true;
+        return true;
+    }
+
+    bool consume_bar() {
+        if (after_dot_ || stack_.empty() || !has_current_) {
+            return false;
+        }
+
+        return close_for_bar();
+    }
+
+    const SmoothCmdFlowSetup::FuncDecl* resolve_func(std::string_view name) const {
+        if (after_dot_) {
+            return resolve_method(name);
+        }
+        if (!has_current_) {
+            return resolve_starter(name);
+        }
+
+        return nullptr;
+    }
+
+    const SmoothCmdFlowSetup::FuncDecl* resolve_starter(std::string_view name) const {
+        const SmoothCmdFlowSetup::TypeRef* expected = expected_input_type();
+        const SmoothCmdFlowSetup::FuncDecl* exact = nullptr;
+        const SmoothCmdFlowSetup::FuncDecl* fallback = nullptr;
+
+        for (const SmoothCmdFlowSetup::FuncDecl& func : funcs_) {
+            if (func.name != name) {
+                continue;
+            }
+            if (stack_.empty()) {
+                if (func.type != SmoothCmdFlowSetup::FuncType::GLOBAL) {
+                    continue;
+                }
+            } else {
+                if (func.type != SmoothCmdFlowSetup::FuncType::GLOBAL &&
+                    func.type != SmoothCmdFlowSetup::FuncType::ARGUMENT) {
+                    continue;
+                }
+                if (expected != nullptr && !same_type(func.out, *expected)) {
+                    if (fallback != nullptr) {
+                        return nullptr;
+                    }
+                    fallback = &func;
+                    continue;
+                }
+            }
+
+            if (exact != nullptr) {
+                return nullptr;
+            }
+            exact = &func;
+        }
+
+        if (exact != nullptr) {
+            return exact;
+        }
+        return fallback;
+    }
+
+    const SmoothCmdFlowSetup::FuncDecl* resolve_method(std::string_view name) const {
+        const SmoothCmdFlowSetup::FuncDecl* selected = nullptr;
+
+        for (const SmoothCmdFlowSetup::FuncDecl& func : funcs_) {
+            if (func.type != SmoothCmdFlowSetup::FuncType::METHOD) {
+                continue;
+            }
+            if (func.name != name || func.belong_type != current_.id) {
+                continue;
+            }
+
+            if (selected != nullptr) {
+                return nullptr;
+            }
+            selected = &func;
+        }
+
+        return selected;
+    }
+
+    const SmoothCmdFlowSetup::TypeRef* expected_input_type() const {
+        if (stack_.empty()) {
+            return nullptr;
+        }
+
+        const TypeFrame& frame = stack_.back();
+        if (frame.input_count >= frame.func->in.size()) {
+            return nullptr;
+        }
+        return &frame.func->in[frame.input_count];
+    }
+
+    bool start_func(const SmoothCmdFlowSetup::FuncDecl& func) {
+        SmoothCmdFlowSetup::TypeRef result_type = func.out;
+
+        if (after_dot_) {
+            if (current_.is_array && has_type(result_type)) {
+                result_type.is_array = true;
+            }
+            has_current_ = false;
+            after_dot_ = false;
+        }
+
+        if (func.in.empty()) {
+            current_ = result_type;
+            has_current_ = true;
+            return true;
+        }
+
+        stack_.push_back(TypeFrame{&func, result_type, 0});
+        return true;
+    }
+
+    bool close_one_argument() {
+        TypeFrame& frame = stack_.back();
+        if (frame.input_count >= frame.func->in.size()) {
+            return false;
+        }
+        if (!same_type(current_, frame.func->in[frame.input_count])) {
+            return false;
+        }
+
+        ++frame.input_count;
+        has_current_ = false;
+
+        if (frame.input_count != frame.func->in.size()) {
+            return true;
+        }
+
+        SmoothCmdFlowSetup::TypeRef result_type = frame.result_type;
+        stack_.pop_back();
+        current_ = result_type;
+        has_current_ = true;
+        return true;
+    }
+
+    bool close_for_bar() {
+        if (!close_one_argument()) {
+            return false;
+        }
+
+        while (has_current_ && !stack_.empty()) {
+            if (!close_one_argument()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+};
+
 } // namespace
 
     void SmoothCmdFlowDevice::clear_string() {
@@ -476,23 +758,40 @@ private:
 
         const std::size_t prefix_begin = current_prefix_begin(input_);
         const std::string_view prefix(input_.data() + prefix_begin, input_.size() - prefix_begin);
+        CandidateAnalyzer analyzer(*setting_, setting_->funcs_, input_.substr(0, prefix_begin));
+        const CandidateContext context = analyzer.run();
+
+        if (!context.valid) {
+            return result;
+        }
 
         for (const SmoothCmdFlowSetup::FuncDecl& func : setting_->funcs_) {
             if (!starts_with(func.name, prefix)) {
                 continue;
             }
 
-            bool duplicated = false;
-            for (const std::string& existing : result) {
-                if (existing == func.name) {
-                    duplicated = true;
-                    break;
+            if (context.after_dot) {
+                if (func.type != SmoothCmdFlowSetup::FuncType::METHOD ||
+                    !context.has_current ||
+                    func.belong_type != context.current.id) {
+                    continue;
                 }
+            } else if (!context.has_current) {
+                if (context.expected == nullptr) {
+                    if (func.type != SmoothCmdFlowSetup::FuncType::GLOBAL) {
+                        continue;
+                    }
+                } else {
+                    if (func.type != SmoothCmdFlowSetup::FuncType::ARGUMENT ||
+                        !same_type(func.out, *context.expected)) {
+                        continue;
+                    }
+                }
+            } else {
+                continue;
             }
 
-            if (!duplicated) {
-                result.push_back(func.name);
-            }
+            push_unique(result, func.name);
         }
 
         return result;

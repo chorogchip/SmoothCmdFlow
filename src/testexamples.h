@@ -10,6 +10,7 @@ inline int entity_data = 1;
 inline int bool_data = 1;
 inline int pos_data = 2;
 inline int block_data = 3;
+inline num_data_t score_data = 4;
 inline int damage_called = 0;
 inline int pos_called = 0;
 inline int setblock_called = 0;
@@ -40,6 +41,10 @@ inline void* entity_callback(void*, void**) {
 
 inline void* stone_callback(void*, void**) {
     return &block_data;
+}
+
+inline void* score_callback(void*, void**) {
+    return &score_data;
 }
 
 inline void* damage_callback(void* bel, void** in) {
@@ -88,6 +93,10 @@ inline SmoothCmdFlowSetup make_minecraft_like_setup() {
     setup.add_func(SmoothCmdFlowSetup::FuncType::GLOBAL, {}, "entities", SmoothCmdFlowSetup::array(entity_type), {}, noop_callback);
     setup.add_func(SmoothCmdFlowSetup::FuncType::GLOBAL, {}, "stone", SmoothCmdFlowSetup::type(block_type), {}, stone_callback);
     setup.add_func(SmoothCmdFlowSetup::FuncType::GLOBAL, {}, "spark", SmoothCmdFlowSetup::type(effect_type), {}, noop_callback);
+
+    setup.add_func(SmoothCmdFlowSetup::FuncType::ARGUMENT, {}, "score", SmoothCmdFlowSetup::type(i64_type), {}, score_callback);
+    setup.add_func(SmoothCmdFlowSetup::FuncType::ARGUMENT, {}, "here", SmoothCmdFlowSetup::type(pos_type), {}, pos_callback);
+    setup.add_func(SmoothCmdFlowSetup::FuncType::ARGUMENT, {}, "solid", SmoothCmdFlowSetup::type(block_type), {}, stone_callback);
 
     setup.add_func(SmoothCmdFlowSetup::FuncType::METHOD, entity_type, "kill", SmoothCmdFlowSetup::type(bool_type), {}, kill_callback);
     setup.add_func(SmoothCmdFlowSetup::FuncType::METHOD, entity_type, "damage", SmoothCmdFlowSetup::type(bool_type), {SmoothCmdFlowSetup::type(i64_type)}, damage_callback);
@@ -198,6 +207,84 @@ inline bool test_device_command_candidate_prefix() {
     return candidates.size() == 1 && candidates[0] == "damage";
 }
 
+inline bool test_device_command_candidate_sentence_start_globals_only() {
+    SmoothCmdFlowSetup setup = make_minecraft_like_setup();
+    SmoothCmdFlowDevice device;
+    device.bind_setup(&setup);
+
+    device.set_string("s");
+    auto candidates = device.get_command_candidate();
+
+    bool has_spark = false;
+    bool has_stone = false;
+    bool has_score = false;
+    bool has_solid = false;
+
+    for (const std::string& candidate : candidates) {
+        if (candidate == "spark") has_spark = true;
+        if (candidate == "stone") has_stone = true;
+        if (candidate == "score") has_score = true;
+        if (candidate == "solid") has_solid = true;
+    }
+
+    return has_spark && has_stone && !has_score && !has_solid;
+}
+
+inline bool test_device_command_candidate_methods_only_after_receiver() {
+    SmoothCmdFlowSetup setup = make_minecraft_like_setup();
+    SmoothCmdFlowDevice device;
+    device.bind_setup(&setup);
+
+    device.set_string("entity.");
+    auto candidates = device.get_command_candidate();
+
+    bool has_damage = false;
+    bool has_emit = false;
+    bool has_entity = false;
+    bool has_score = false;
+
+    for (const std::string& candidate : candidates) {
+        if (candidate == "damage") has_damage = true;
+        if (candidate == "emit") has_emit = true;
+        if (candidate == "entity") has_entity = true;
+        if (candidate == "score") has_score = true;
+    }
+
+    return has_damage && has_emit && !has_entity && !has_score;
+}
+
+inline bool test_device_command_candidate_argument_functions_only() {
+    SmoothCmdFlowSetup setup = make_minecraft_like_setup();
+    SmoothCmdFlowDevice device;
+    device.bind_setup(&setup);
+
+    device.set_string("setblock ");
+    auto candidates = device.get_command_candidate();
+
+    bool has_here = false;
+    bool has_pos = false;
+    bool has_solid = false;
+
+    for (const std::string& candidate : candidates) {
+        if (candidate == "here") has_here = true;
+        if (candidate == "pos") has_pos = true;
+        if (candidate == "solid") has_solid = true;
+    }
+
+    return has_here && !has_pos && !has_solid;
+}
+
+inline bool test_device_command_candidate_argument_prefix_and_type() {
+    SmoothCmdFlowSetup setup = make_minecraft_like_setup();
+    SmoothCmdFlowDevice device;
+    device.bind_setup(&setup);
+
+    device.set_string("setblock here | s");
+    auto candidates = device.get_command_candidate();
+
+    return candidates.size() == 1 && candidates[0] == "solid";
+}
+
 inline bool test_device_apply_autocomplete_prefix() {
     SmoothCmdFlowSetup setup = make_minecraft_like_setup();
     SmoothCmdFlowDevice device;
@@ -233,6 +320,10 @@ inline bool run_device_tests() {
            test_device_reject_type_mismatch() &&
            test_device_reject_unknown_function() &&
            test_device_command_candidate_prefix() &&
+           test_device_command_candidate_sentence_start_globals_only() &&
+           test_device_command_candidate_methods_only_after_receiver() &&
+           test_device_command_candidate_argument_functions_only() &&
+           test_device_command_candidate_argument_prefix_and_type() &&
            test_device_apply_autocomplete_prefix() &&
            test_device_error_message_is_one_line();
 }

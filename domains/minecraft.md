@@ -92,20 +92,20 @@
 
 # SCF command
 ```
-entities.name.is "playername" | misc.advancement.grant shoot_arrow
-entities.name.is "playername" | attrib.speed.set 10
-gamestate.network.banned.add "playername"
+entities.name.is playername.name | misc.advancement.grant shoot_arrow
+entities.name.is playername.name | attrib.speed.set 10
+gamestate.network.banned.add playername.name
 gamestate.network.banned.players
-entities.name.is "playername" | inventory.clear
+entities.name.is playername.name | inventory.clear
 entities.type.is creeper | state.hp.damage 10
 gamestate.rule.gamemode.set survival
-gamestate.privilege.op.add "playername"
+gamestate.privilege.op.add playername.name
 gamestate.rule.difficulty.set hard
-entities.name.is "playername" | state.effect.add night_vision.set_duration 10
-entities.name.is "playername" | inventory.hand.enchant hardness.set_level 2
-entities.name.is "playername" | inventory.hand.is none | damage 1
-entities.name.is "playername" | inventory.add diamond_sword
-entities.name.is "playername" | state.experience.add 10
+entities.name.is playername.name | state.effect.add night_vision.set_duration 10
+entities.name.is playername.name | inventory.hand.enchant hardness.set_level 2
+entities.name.is playername.name | inventory.hand.is none | damage 1
+entities.name.is playername.name | inventory.add diamond_sword
+entities.name.is playername.name | state.experience.add 10
 
 world.blocks.pos.x 50 | y 100 | z 0 | setblock world.blocks.pos.x 13 | y 20 | z 50 | pos.to.x 17 | y 30 | z 65 | mask.not air
 world.blocks.pos.x 50 | y 100 | z 0 | setblock sand

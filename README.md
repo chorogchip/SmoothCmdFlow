@@ -39,3 +39,6 @@ tokens: <func_id>, '.', '|'
 - Debug Console
 - Log/Database Search
 - Image/File Edit
+- SQL Query
+- Linux File System
+- Small VM Manipulation
