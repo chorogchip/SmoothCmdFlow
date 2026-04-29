@@ -37,10 +37,10 @@ public:
             char ch = str[i];
 
             if (ch == '.') {
-                out.push_back(Lexeme{.tok = Token::Dot, .id = 0});
+                out.push_back(Lexeme{Token::Dot, 0});
                 ++i;
             } else if (ch == '|') {
-                out.push_back(Lexeme{.tok = Token::Bar, .id = 0});
+                out.push_back(Lexeme{Token::Bar, 0});
                 ++i;
             } else if ('0' <= ch && ch <= '9') {
                 num_data_t data = 0;
@@ -50,7 +50,7 @@ public:
                     ++i;
                 }
 
-                out.push_back(Lexeme{.tok = Token::Number, .id = data});
+                out.push_back(Lexeme{Token::Number, data});
             } else {
                 size_t start = i;
 
@@ -59,15 +59,15 @@ public:
                 }
 
                 if (i == start) {
-                    out.push_back(Lexeme{.tok = Token::Invalid, .id = i});
+                    out.push_back(Lexeme{Token::Invalid, i});
                     break;
                 }
 
                 size_t id = table.add(str.substr(start, i - start));
-                out.push_back(Lexeme{.tok = Token::Identifier, .id = id});
+                out.push_back(Lexeme{Token::Identifier, id});
             }
         }
-        out.push_back(Lexeme{.tok = Token::EndOfFile, .id = 0});
+        out.push_back(Lexeme{Token::EndOfFile, 0});
         return out;
     }
 };

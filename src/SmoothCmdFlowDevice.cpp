@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <sstream>
+#include <string_view>
 #include <utility>
 
 #include "Lexer.h"
@@ -26,30 +27,36 @@ static bool same_type(SmoothCmdFlowSetup::TypeRef lhs, SmoothCmdFlowSetup::TypeR
     return lhs.id == rhs.id && lhs.is_array == rhs.is_array;
 }
 
-static bool has_type(SmoothCmdFlowSetup::TypeRef type) {
-    return type.id != SmoothCmdFlowSetup::no_type;
+static bool is_identifier_char(char ch) {
+    return ('A' <= ch && ch <= 'Z') ||
+           ('a' <= ch && ch <= 'z') ||
+           ch == '-' ||
+           ch == '_';
 }
 
-static std::string type_name(const SmoothCmdFlowSetup::TypeRef& type) {
-    if (type.id == SmoothCmdFlowSetup::no_type) {
-        return "<none>";
+static std::size_t current_prefix_begin(std::string_view input) {
+    std::size_t pos = input.size();
+
+    while (pos > 0 && is_identifier_char(input[pos - 1])) {
+        --pos;
     }
 
-    std::ostringstream oss;
-    if (type.is_array) {
-        oss << "Array<";
-    }
-    oss << "#" << type.id;
-    if (type.is_array) {
-        oss << ">";
-    }
-    return oss.str();
+    return pos;
+}
+
+static bool starts_with(std::string_view value, std::string_view prefix) {
+    return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
+}
+
+static bool has_type(SmoothCmdFlowSetup::TypeRef type) {
+    return type.id != SmoothCmdFlowSetup::no_type;
 }
 
 class Executor {
 private:
     const SmoothCmdFlowSetup& setup_;
     const std::vector<SmoothCmdFlowSetup::FuncDecl>& funcs_;
+    const std::vector<std::string>& type_names_;
     std::string source_;
     StringPool token_table_;
     std::vector<Lexeme> tokens_;
@@ -65,15 +72,15 @@ public:
     Executor(
         const SmoothCmdFlowSetup& setup,
         const std::vector<SmoothCmdFlowSetup::FuncDecl>& funcs,
+        const std::vector<std::string>& type_names,
         std::string source
-    ) : setup_(setup), funcs_(funcs), source_(std::move(source)) {}
+    ) : setup_(setup), funcs_(funcs), type_names_(type_names), source_(std::move(source)) {}
 
     bool run(std::string& error) {
         auto i64 = setup_.find_type("I64");
         if (i64.has_value()) {
             i64_type_ = *i64;
         }
-
         tokens_ = Lexer::lex(source_, token_table_);
 
         for (std::size_t i = 0; i < tokens_.size(); ++i) {
@@ -93,7 +100,7 @@ public:
             return false;
         }
         if (after_dot_) {
-            error = "expected function after '.'";
+            error = "expected method name after '.'";
             return false;
         }
         if (!stack_.empty()) {
@@ -116,7 +123,7 @@ private:
             case Token::Bar:
                 return consume_bar();
             case Token::Invalid:
-                error_ = "invalid token";
+                error_ = "invalid token at offset " + std::to_string(lexeme.id);
                 return false;
             case Token::EndOfFile:
                 return true;
@@ -146,15 +153,15 @@ private:
 
     bool consume_number(num_data_t value) {
         if (after_dot_) {
-            error_ = "expected function after '.', got number";
+            error_ = "expected method name after '.', got number literal " + std::to_string(value);
             return false;
         }
         if (stack_.empty()) {
-            error_ = "number literal cannot start a sentence";
+            error_ = "number literal " + std::to_string(value) + " cannot start a sentence";
             return false;
         }
         if (has_current_) {
-            error_ = "expected '|' or '.', got number";
+            error_ = "expected '|' or '.', got number literal " + std::to_string(value);
             return false;
         }
         if (i64_type_ == SmoothCmdFlowSetup::no_type) {
@@ -170,7 +177,7 @@ private:
 
     bool consume_dot() {
         if (!has_current_) {
-            error_ = "'.' requires a receiver value";
+            error_ = "'.' requires a receiver value before it";
             return false;
         }
         if (after_dot_) {
@@ -184,7 +191,7 @@ private:
 
     bool consume_bar() {
         if (after_dot_) {
-            error_ = "expected function after '.', got '|'";
+            error_ = "expected method name after '.', got '|'";
             return false;
         }
         if (stack_.empty()) {
@@ -192,7 +199,7 @@ private:
             return false;
         }
         if (!has_current_) {
-            error_ = "expected argument before '|'";
+            error_ = "expected argument before '|' for function '" + stack_.back().func->name + "'";
             return false;
         }
 
@@ -267,7 +274,7 @@ private:
         }
 
         if (selected == nullptr) {
-            error_ = "unknown method '" + std::string(name) + "' for " + type_name(current_.type);
+            error_ = "unknown method '" + std::string(name) + "' for type " + type_name(current_.type);
         }
 
         return selected;
@@ -332,7 +339,9 @@ private:
             return false;
         }
         if (!same_type(current_.type, frame.func->in[index])) {
-            error_ = "argument type mismatch for function '" + frame.func->name + "'";
+            error_ = "argument " + std::to_string(index + 1) + " for function '" +
+                     frame.func->name + "' expected " + type_name(frame.func->in[index]) +
+                     ", got " + type_name(current_.type);
             return false;
         }
 
@@ -365,7 +374,9 @@ private:
     bool close_tail_bars() {
         while (!stack_.empty()) {
             if (!has_current_) {
-                error_ = "missing argument for function '" + stack_.back().func->name + "'";
+                const Frame& frame = stack_.back();
+                error_ = "missing argument " + std::to_string(frame.input_data.size() + 1) +
+                         " for function '" + frame.func->name + "'";
                 return false;
             }
             if (!close_one_argument()) {
@@ -374,6 +385,24 @@ private:
         }
 
         return true;
+    }
+
+    std::string type_name(const SmoothCmdFlowSetup::TypeRef& type) const {
+        if (type.id == SmoothCmdFlowSetup::no_type) {
+            return "<none>";
+        }
+
+        std::string base;
+        if (type.id < type_names_.size()) {
+            base = type_names_[type.id];
+        } else {
+            base = "#" + std::to_string(type.id);
+        }
+
+        if (type.is_array) {
+            return "Array<" + base + ">";
+        }
+        return base;
     }
 };
 
@@ -402,7 +431,9 @@ private:
         auto candidates = get_command_candidate();
 
         if (candidates.size() != 1) return;
-        input_ = std::move(candidates.front());
+
+        const std::size_t prefix_begin = current_prefix_begin(input_);
+        input_.replace(prefix_begin, input_.size() - prefix_begin, candidates.front());
     }
 
     bool SmoothCmdFlowDevice::execute() {
@@ -414,7 +445,16 @@ private:
         }
         if (input_.empty()) return true;
 
-        Executor executor(*setting_, setting_->funcs_, input_);
+        std::vector<std::string> type_names;
+        for (std::size_t i = 0; ; ++i) {
+            auto name = setting_->type_ids_.get(i);
+            if (!name.has_value()) {
+                break;
+            }
+            type_names.push_back(std::string(*name));
+        }
+
+        Executor executor(*setting_, setting_->funcs_, type_names, input_);
         return executor.run(err_msg_);
     }
 
@@ -423,8 +463,25 @@ private:
 
         if (setting_ == nullptr) return result;
 
+        const std::size_t prefix_begin = current_prefix_begin(input_);
+        const std::string_view prefix(input_.data() + prefix_begin, input_.size() - prefix_begin);
+
         for (const SmoothCmdFlowSetup::FuncDecl& func : setting_->funcs_) {
-            result.push_back(func.name);
+            if (!starts_with(func.name, prefix)) {
+                continue;
+            }
+
+            bool duplicated = false;
+            for (const std::string& existing : result) {
+                if (existing == func.name) {
+                    duplicated = true;
+                    break;
+                }
+            }
+
+            if (!duplicated) {
+                result.push_back(func.name);
+            }
         }
 
         return result;

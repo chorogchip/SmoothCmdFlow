@@ -188,6 +188,42 @@ inline bool test_device_reject_unknown_function() {
     return !device.execute();
 }
 
+inline bool test_device_command_candidate_prefix() {
+    SmoothCmdFlowSetup setup = make_minecraft_like_setup();
+    SmoothCmdFlowDevice device;
+    device.bind_setup(&setup);
+
+    device.set_string("entity.da");
+    auto candidates = device.get_command_candidate();
+    return candidates.size() == 1 && candidates[0] == "damage";
+}
+
+inline bool test_device_apply_autocomplete_prefix() {
+    SmoothCmdFlowSetup setup = make_minecraft_like_setup();
+    SmoothCmdFlowDevice device;
+    device.bind_setup(&setup);
+
+    device.set_string("entity.da");
+    device.apply_autocomplete();
+    return device.get_string() == "entity.damage";
+}
+
+inline bool test_device_error_message_is_one_line() {
+    SmoothCmdFlowSetup setup = make_minecraft_like_setup();
+    SmoothCmdFlowDevice device;
+    device.bind_setup(&setup);
+
+    device.set_string("entity.damage stone");
+    if (device.execute()) {
+        return false;
+    }
+
+    std::string_view error = device.get_last_error_msg();
+    return error.find('\n') == std::string_view::npos &&
+           error.find("expected I64") != std::string_view::npos &&
+           error.find("got Block") != std::string_view::npos;
+}
+
 inline bool run_device_tests() {
     return test_device_execute() &&
            test_device_execute_explicit_bar() &&
@@ -195,7 +231,10 @@ inline bool run_device_tests() {
            test_device_execute_nary_global() &&
            test_device_execute_nested_global_args() &&
            test_device_reject_type_mismatch() &&
-           test_device_reject_unknown_function();
+           test_device_reject_unknown_function() &&
+           test_device_command_candidate_prefix() &&
+           test_device_apply_autocomplete_prefix() &&
+           test_device_error_message_is_one_line();
 }
 
 inline void test1() {
